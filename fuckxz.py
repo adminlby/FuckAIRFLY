@@ -223,7 +223,7 @@ def main():
     parser.add_argument(
         "--threads",
         type=int,
-        default=5,
+        default=7,
         help="并发线程数量（1-20之间）"
     )
     args = parser.parse_args()
