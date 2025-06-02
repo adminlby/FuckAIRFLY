@@ -211,13 +211,13 @@ def main():
     parser.add_argument(
         "--frequency",
         type=float,
-        default=1.0,
+        default=0.5,
         help="注册频率（秒），范围：0.3秒到60秒之间"
     )
     parser.add_argument(
         "--count",
         type=int,
-        default=10,
+        default=1000,
         help="测试注册账号次数"
     )
     parser.add_argument(
