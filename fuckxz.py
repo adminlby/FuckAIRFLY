@@ -7,6 +7,42 @@ import threading
 import concurrent.futures
 import sys
 from datetime import datetime
+import ddddocr
+import io
+
+# Initialize ddddocr globally
+ocr = ddddocr.DdddOcr()
+
+def recognize_captcha(session, base_url, max_retries=3):
+    """
+    Download and recognize the captcha image
+    Returns the recognized text
+    """
+    for attempt in range(max_retries):
+        try:
+            # Get the captcha image
+            captcha_url = f"{base_url}/includes/captcha.php"
+            response = session.get(captcha_url, timeout=10)
+            if response.status_code != 200:
+                print(f"[错误] 获取验证码失败: {response.status_code}")
+                continue
+                
+            # Use ddddocr to recognize the captcha
+            image_bytes = response.content
+            result = ocr.classification(image_bytes)
+            if result and len(result) >= 4:  # 确保识别结果至少有4个字符
+                print(f"[验证码] 识别结果: {result}")
+                return result
+            else:
+                print(f"[警告] 验证码识别结果异常: {result}，尝试重新识别")
+                continue
+        except Exception as e:
+            print(f"[错误] 验证码识别异常 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt == max_retries - 1:  # 最后一次尝试
+                print("[错误] 验证码识别失败，已达到最大重试次数")
+                return None
+            time.sleep(1)  # 等待1秒后重试
+    return None
 
 def random_string(length=8, include_symbols=False):
     chars = string.ascii_letters + string.digits
@@ -144,16 +180,6 @@ def register_account(base_url):
     username = generate_username(random.randint(20, 25))  # 用户名20-25位，只包含字母和数字
     password = generate_password(random.randint(32, 40))  # 生成32-40位的密码
     
-    # 构建表单数据
-    payload = {
-        "email": email,
-        "username": username,
-        "password": password,
-        "confirm_password": password,
-        "agree_terms": "on",
-        "register": ""
-    }
-    
     # 设置完整的请求头
     headers = {
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -182,32 +208,47 @@ def register_account(base_url):
         # 先访问注册页面获取PHPSESSID
         session.get(f"{base_url}/register.php", headers=headers)
         
+        # 获取并识别验证码
+        captcha_text = recognize_captcha(session, base_url)
+        if not captcha_text:
+            print(f"\r[失败] 验证码识别失败！账号: {username}")
+            return False
+            
+        # 构建表单数据
+        payload = {
+            "email": email,
+            "username": username,
+            "password": password,
+            "confirm_password": password,
+            "captcha": captcha_text,  # 添加验证码
+            "agree_terms": "on",
+            "register": ""
+        }
+        
         # 发送注册请求
         response = session.post(
             f"{base_url}/register.php",
-            data=payload,  # 使用data而不是json，因为是form-urlencoded格式
+            data=payload,
             headers=headers,
             timeout=10,
-            allow_redirects=False  # 不自动跟随重定向，这样可以捕获302状态码
+            allow_redirects=False
         )
         
         if response.status_code == 302:
-            print(f"[成功] 注册成功！账号: {username} 邮箱: {email} 密码: {password}")
+            print(f"\r[成功] 账号: {username} | 邮箱: {email}")
             # 保存成功的账号
             with open("successful_accounts.txt", "a", encoding="utf-8") as f:
                 f.write(f"账号: {username}, 邮箱: {email}, 密码: {password}\n")
             return True
         else:
-            print(f"[失败] 注册失败！账号: {username} 邮箱: {email} 状态码: {response.status_code}")
-            if response.text:
-                print(f"响应内容: {response.text[:200]}...")  # 只打印前200个字符
+            print(f"\r[失败] 账号: {username} | 状态码: {response.status_code}")
             return False
     except Exception as e:
-        print(f"[错误] 请求异常: {e}")
+        print(f"\r[错误] 请求异常: {e}")
         return False
 
 def main():
-    parser = argparse.ArgumentParser(description="测试注册账号脚本")
+    parser = argparse.ArgumentParser(description="XZphotos注册账号脚本")
     parser.add_argument(
         "--frequency",
         type=float,
@@ -217,7 +258,7 @@ def main():
     parser.add_argument(
         "--count",
         type=int,
-        default=1000,
+        default=10,
         help="测试注册账号次数"
     )
     parser.add_argument(
@@ -251,7 +292,7 @@ def main():
     
     def worker():
         nonlocal successful_count, failed_count
-        session = requests.Session()  # 每个线程使用独立的session
+        session = requests.Session()
         
         while True:
             with counter_lock:
@@ -266,7 +307,7 @@ def main():
                     else:
                         failed_count += 1
                     total = successful_count + failed_count
-                    print(f"\r进度: {total}/{args.count} (成功: {successful_count}, 失败: {failed_count})", end="")
+                    print(f"\r进度: {total}/{args.count} [成功: {successful_count} | 失败: {failed_count}]", end="", flush=True)
                 
                 time.sleep(args.frequency)
             except Exception as e:
@@ -274,15 +315,15 @@ def main():
                 with counter_lock:
                     failed_count += 1
     
-    print(f"开始注册 - 总数: {args.count}, 频率: {args.frequency}秒, 线程数: {args.threads}")
-    print("按Ctrl+C可以随时停止程序")
+    print(f"\n开始注册 - 总数: {args.count} | 频率: {args.frequency}秒 | 线程数: {args.threads}")
+    print("按Ctrl+C可以随时停止程序\n")
     
     # 创建线程池
     threads = []
     try:
         for _ in range(args.threads):
             t = threading.Thread(target=worker)
-            t.daemon = True  # 设置为守护线程，这样主线程结束时它们会自动结束
+            t.daemon = True
             threads.append(t)
             t.start()
         
@@ -298,10 +339,6 @@ def main():
         
     except KeyboardInterrupt:
         print("\n\n检测到Ctrl+C，正在优雅退出...")
-        print("等待当前任务完成...")
-        # 等待所有线程完成当前任务
-        for t in threads:
-            t.join()
         print(f"\n中途停止！")
         print(f"成功: {successful_count}")
         print(f"失败: {failed_count}")
