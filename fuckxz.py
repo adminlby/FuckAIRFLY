@@ -96,6 +96,35 @@ def generate_username(length):
     username += ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(remaining_length))
     return username
 
+def generate_random_ip():
+    """
+    生成一个随机的IPv4地址
+    排除私有IP地址范围和特殊IP地址
+    """
+    while True:
+        # 生成四个随机数作为IP地址的四个部分
+        ip = [str(random.randint(1, 255)) for _ in range(4)]
+        ip_addr = ".".join(ip)
+        
+        # 检查是否为私有IP或特殊IP
+        first_octet = int(ip[0])
+        second_octet = int(ip[1])
+        
+        # 排除以下IP范围:
+        # 10.0.0.0 to 10.255.255.255
+        # 172.16.0.0 to 172.31.255.255
+        # 192.168.0.0 to 192.168.255.255
+        # 127.0.0.0 to 127.255.255.255
+        if not (
+            first_octet == 10 or
+            (first_octet == 172 and 16 <= second_octet <= 31) or
+            (first_octet == 192 and second_octet == 168) or
+            first_octet == 127 or
+            first_octet == 0 or
+            first_octet == 255
+        ):
+            return ip_addr
+
 # 随机生成的50个 User-Agent 字符串列表
 user_agents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36",
@@ -198,7 +227,10 @@ def register_account(base_url):
         "sec-fetch-site": "same-origin",
         "sec-fetch-user": "?1",
         "upgrade-insecure-requests": "1",
-        "user-agent": random.choice(user_agents)  # 使用随机User-Agent
+        "user-agent": random.choice(user_agents),  # 使用随机User-Agent
+        "X-Forwarded-For": generate_random_ip(),  # 添加随机IP
+        "Client-IP": generate_random_ip(),  # 添加随机IP
+        "X-Real-IP": generate_random_ip()  # 添加随机IP
     }
     
     try:
@@ -258,7 +290,7 @@ def main():
     parser.add_argument(
         "--count",
         type=int,
-        default=10,
+        default=100,
         help="测试注册账号次数"
     )
     parser.add_argument(
