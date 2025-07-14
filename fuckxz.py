@@ -294,7 +294,7 @@ def main():
     parser.add_argument(
         "--count",
         type=int,
-        default=1000,
+        default=2000,
         help="测试注册账号次数"
     )
     parser.add_argument(
