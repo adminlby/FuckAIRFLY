@@ -7,42 +7,7 @@ import threading
 import concurrent.futures
 import sys
 from datetime import datetime
-import ddddocr
 import io
-
-# Initialize ddddocr globally
-ocr = ddddocr.DdddOcr()
-
-def recognize_captcha(session, base_url, max_retries=3):
-    """
-    Download and recognize the captcha image
-    Returns the recognized text
-    """
-    for attempt in range(max_retries):
-        try:
-            # Get the captcha image
-            captcha_url = f"{base_url}/includes/captcha.php"
-            response = session.get(captcha_url, timeout=10)
-            if response.status_code != 200:
-                print(f"[错误] 获取验证码失败: {response.status_code}")
-                continue
-                
-            # Use ddddocr to recognize the captcha
-            image_bytes = response.content
-            result = ocr.classification(image_bytes)
-            if result and len(result) >= 4:  # 确保识别结果至少有4个字符
-                print(f"[验证码] 识别结果: {result}")
-                return result
-            else:
-                print(f"[警告] 验证码识别结果异常: {result}，尝试重新识别")
-                continue
-        except Exception as e:
-            print(f"[错误] 验证码识别异常 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
-            if attempt == max_retries - 1:  # 最后一次尝试
-                print("[错误] 验证码识别失败，已达到最大重试次数")
-                return None
-            time.sleep(1)  # 等待1秒后重试
-    return None
 
 def random_string(length=8, include_symbols=False):
     chars = string.ascii_letters + string.digits
@@ -212,14 +177,14 @@ def register_account(base_url):
     # 设置完整的请求头
     headers = {
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-CN;q=0.7",
+        "accept-language": "en,zh-CN;q=0.9,zh;q=0.8",
         "cache-control": "no-cache",
         "content-type": "application/x-www-form-urlencoded",
-        "origin": "https://www.xzphotos.cn",
+        "origin": "https://cx.flyhs.top",
         "pragma": "no-cache",
         "priority": "u=0, i",
-        "referer": "https://www.xzphotos.cn/register.php",
-        "sec-ch-ua": '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+        "referer": "https://cx.flyhs.top/register.php",
+        "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "document",
@@ -240,21 +205,13 @@ def register_account(base_url):
         # 先访问注册页面获取PHPSESSID
         session.get(f"{base_url}/register.php", headers=headers)
         
-        # 获取并识别验证码
-        captcha_text = recognize_captcha(session, base_url)
-        if not captcha_text:
-            print(f"\r[失败] 验证码识别失败！账号: {username}")
-            return False
-            
         # 构建表单数据
         payload = {
-            "email": email,
             "username": username,
+            "email": email,
             "password": password,
             "confirm_password": password,
-            "captcha": captcha_text,  # 添加验证码
-            "agree_terms": "on",
-            "register": ""
+            "terms": "on"
         }
         
         # 发送注册请求
@@ -263,11 +220,58 @@ def register_account(base_url):
             data=payload,
             headers=headers,
             timeout=10,
-            allow_redirects=False
+            allow_redirects=True  # 允许重定向以获取完整响应
         )
         
-        if response.status_code == 302:
-            print(f"\r[成功] 账号: {username} | 邮箱: {email}")
+        # 判断注册是否成功
+        # 检查状态码和响应内容
+        if response.status_code == 200:
+            response_text = response.text.lower()
+            # 检查是否包含明确的错误指示词
+            error_indicators = [
+                'error', '错误', 'failed', '失败', 'invalid', '无效', 
+                'exists', '已存在', 'taken', '已被占用', 'duplicate', '重复',
+                'username already', 'email already', 'already registered',
+                'registration failed', '注册失败', 'try again', '请重试'
+            ]
+            
+            # 检查是否包含成功指示词
+            success_indicators = [
+                'welcome', '欢迎', 'success', '成功', 'registered', '注册成功',
+                'dashboard', 'profile', 'account created', '账户创建',
+                'registration complete', '注册完成', 'thank you', '谢谢'
+            ]
+            
+            has_success = any(indicator in response_text for indicator in success_indicators)
+            has_error = any(indicator in response_text for indicator in error_indicators)
+            
+            # 优先检查是否有明确的成功指示
+            if has_success:
+                print(f"\r[成功] 账号: {username} | 邮箱: {email} | 密码: {password}")
+                # 保存成功的账号
+                with open("successful_accounts.txt", "a", encoding="utf-8") as f:
+                    f.write(f"账号: {username}, 邮箱: {email}, 密码: {password}\n")
+                return True
+            # 如果有明确错误指示，则失败
+            elif has_error:
+                print(f"\r[失败] 账号: {username} | 响应包含错误信息")
+                return False
+            # 如果没有明确指示，检查响应长度和内容
+            else:
+                # 如果响应很短，可能是错误页面
+                if len(response_text) < 100:
+                    print(f"\r[失败] 账号: {username} | 响应内容过短")
+                    return False
+                # 如果响应正常长度且没有错误指示，可能成功
+                else:
+                    print(f"\r[可能成功] 账号: {username} | 邮箱: {email} | 密码: {password}")
+                    # 保存可能成功的账号
+                    with open("successful_accounts.txt", "a", encoding="utf-8") as f:
+                        f.write(f"账号: {username}, 邮箱: {email}, 密码: {password}\n")
+                    return True
+        elif response.status_code == 302:
+            # 重定向通常表示成功
+            print(f"\r[成功] 账号: {username} | 邮箱: {email} | 密码: {password} | 重定向")
             # 保存成功的账号
             with open("successful_accounts.txt", "a", encoding="utf-8") as f:
                 f.write(f"账号: {username}, 邮箱: {email}, 密码: {password}\n")
@@ -290,13 +294,13 @@ def main():
     parser.add_argument(
         "--count",
         type=int,
-        default=100,
+        default=1000,
         help="测试注册账号次数"
     )
     parser.add_argument(
         "--threads",
         type=int,
-        default=7,
+        default=10,
         help="并发线程数量（1-20之间）"
     )
     args = parser.parse_args()
@@ -315,7 +319,7 @@ def main():
         if response.lower() != 'y':
             return
 
-    base_url = "https://www.xzphotos.cn"
+    base_url = "https://cx.flyhs.top"
     
     # 创建计数器和锁
     successful_count = 0
