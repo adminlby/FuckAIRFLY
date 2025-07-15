@@ -148,7 +148,7 @@ user_agents = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.116 Safari/537.36"
 ]
 
-def register_account(base_url):
+def register_account(base_url, ignore_ssl=False):
     # 随机选择邮箱后缀列表
     email_suffixes = [
     "hotmail.com", "gmail.com", "qq.com", "163.com", "126.com", "139.com", "aliyun.com", "mail.com",
@@ -203,7 +203,7 @@ def register_account(base_url):
         session = requests.Session()
         
         # 先访问注册页面获取PHPSESSID
-        session.get(f"{base_url}/register.php", headers=headers)
+        session.get(f"{base_url}/register.php", headers=headers, verify=not ignore_ssl)
         
         # 构建表单数据
         payload = {
@@ -220,7 +220,8 @@ def register_account(base_url):
             data=payload,
             headers=headers,
             timeout=10,
-            allow_redirects=True  # 允许重定向以获取完整响应
+            allow_redirects=True,  # 允许重定向以获取完整响应
+            verify=not ignore_ssl  # 根据参数控制SSL验证
         )
         
         # 判断注册是否成功
@@ -284,7 +285,7 @@ def register_account(base_url):
         return False
 
 def main():
-    parser = argparse.ArgumentParser(description="XZphotos注册账号脚本")
+    parser = argparse.ArgumentParser(description="AIR FLY注册账号脚本")
     parser.add_argument(
         "--frequency",
         type=float,
@@ -294,7 +295,7 @@ def main():
     parser.add_argument(
         "--count",
         type=int,
-        default=2000,
+        default=10,
         help="测试注册账号次数"
     )
     parser.add_argument(
@@ -302,6 +303,11 @@ def main():
         type=int,
         default=10,
         help="并发线程数量（1-20之间）"
+    )
+    parser.add_argument(
+        "--ignore-ssl",
+        action="store_true",
+        help="忽略SSL证书错误（适用于自签名证书或SSL配置有问题的网站）"
     )
     args = parser.parse_args()
     
@@ -319,7 +325,13 @@ def main():
         if response.lower() != 'y':
             return
 
-    base_url = "https://cx.flyhs.top"
+    base_url = "http://154.44.31.87"
+    
+    # 如果启用了忽略SSL选项，显示警告
+    if args.ignore_ssl:
+        print("警告：已启用忽略SSL证书错误选项！")
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
     # 创建计数器和锁
     successful_count = 0
@@ -336,7 +348,7 @@ def main():
                     break
             
             try:
-                result = register_account(base_url)
+                result = register_account(base_url, args.ignore_ssl)
                 with counter_lock:
                     if result:
                         successful_count += 1

@@ -1,6 +1,6 @@
 # FuckXZ
 
-一個高效能針對XZphotos的帳號產生工具
+一個高效能針對AIR FLY的帳號產生工具
 
 ## 特性
 
@@ -24,8 +24,8 @@
 
 1. Clone仓库：
 ```bash
-git clone https://github.com/yourusername/xz-photos-account-generator.git
-cd xz-photos-account-generator
+git clone [links]
+cd 對應目錄
 ```
 
 2. 安裝依賴：
@@ -38,7 +38,7 @@ pip install -r requirements.txt
 ### 基本用法
 
 ```bash
-python fuckxz.py
+python fuckairfly.py
 ```
 
 ### 命令列參數
@@ -51,17 +51,17 @@ python fuckxz.py
 
 1. 使用預設配置（7個線程，0.5秒/次，註冊1000個帳號）：
 ```bash
-python fuckxz.py
+python fuckairfly.py
 ```
 
 2. 高速模式（10線程，0.3秒/次，註冊100個帳號）：
 ```bash
-python fuckxz.py --threads 10 --frequency 0.3 --count 100
+python fuckairfly.py --threads 10 --frequency 0.3 --count 100
 ```
 
 3. 穩定模式（3線程，2秒/次，註冊50個帳號）：
 ```bash
-python fuckxz.py --threads 3 --frequency 2 --count 50
+python fuckairfly.py --threads 3 --frequency 2 --count 50
 ```
 
 ## 输出文件
