@@ -9,6 +9,17 @@ import sys
 from datetime import datetime
 import io
 
+# ==================== 配置区域 ====================
+# 你可以在这里自由修改配置
+CONFIG = {
+    "IGNORE_SSL": True,  # 是否忽略SSL证书错误 (True: 忽略, False: 验证)
+    "BASE_URL": "https://154.44.31.87",  # 目标网站URL
+    "DEFAULT_FREQUENCY": 0.5,  # 默认注册频率（秒）
+    "DEFAULT_COUNT": 2000,  # 默认注册次数
+    "DEFAULT_THREADS": 10,  # 默认线程数
+}
+# ================================================
+
 def random_string(length=8, include_symbols=False):
     chars = string.ascii_letters + string.digits
     if include_symbols:
@@ -289,19 +300,19 @@ def main():
     parser.add_argument(
         "--frequency",
         type=float,
-        default=0.5,
+        default=CONFIG["DEFAULT_FREQUENCY"],
         help="注册频率（秒），范围：0.3秒到60秒之间"
     )
     parser.add_argument(
         "--count",
         type=int,
-        default=10,
+        default=CONFIG["DEFAULT_COUNT"],
         help="测试注册账号次数"
     )
     parser.add_argument(
         "--threads",
         type=int,
-        default=10,
+        default=CONFIG["DEFAULT_THREADS"],
         help="并发线程数量（1-20之间）"
     )
     parser.add_argument(
@@ -325,13 +336,25 @@ def main():
         if response.lower() != 'y':
             return
 
-    base_url = "http://154.44.31.87"
+    base_url = CONFIG["BASE_URL"]
     
-    # 如果启用了忽略SSL选项，显示警告
-    if args.ignore_ssl:
+    # 确定是否忽略SSL错误（命令行参数优先于配置文件）
+    ignore_ssl = args.ignore_ssl or CONFIG["IGNORE_SSL"]
+    
+    # 如果启用了忽略SSL选项，显示警告并禁用SSL警告
+    if ignore_ssl:
         print("警告：已启用忽略SSL证书错误选项！")
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    
+    # 显示当前配置
+    print(f"当前配置:")
+    print(f"  目标网站: {base_url}")
+    print(f"  忽略SSL: {'是' if ignore_ssl else '否'}")
+    print(f"  注册频率: {args.frequency}秒")
+    print(f"  线程数量: {args.threads}")
+    print(f"  注册次数: {args.count}")
+    print()
     
     # 创建计数器和锁
     successful_count = 0
@@ -348,7 +371,7 @@ def main():
                     break
             
             try:
-                result = register_account(base_url, args.ignore_ssl)
+                result = register_account(base_url, ignore_ssl)
                 with counter_lock:
                     if result:
                         successful_count += 1
