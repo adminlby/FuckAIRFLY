@@ -1,4 +1,4 @@
-# FuckXZ
+# FuckAIRFLY
 
 一個高效能針對AIR FLY的帳號產生工具
 
