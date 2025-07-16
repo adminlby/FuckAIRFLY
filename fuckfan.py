@@ -8,15 +8,20 @@ import concurrent.futures
 import sys
 from datetime import datetime
 import io
+import ddddocr
+
+# Initialize ddddocr globally
+ocr = ddddocr.DdddOcr()
 
 # ==================== 配置区域 ====================
 # 你可以在这里自由修改配置
 CONFIG = {
     "IGNORE_SSL": True,  # 是否忽略SSL证书错误 (True: 忽略, False: 验证)
-    "BASE_URL": "https://154.44.31.87",  # 目标网站URL
+    "BASE_URL": "https://photos.fanstudio.tech",  # 目标网站URL
     "DEFAULT_FREQUENCY": 0.5,  # 默认注册频率（秒）
     "DEFAULT_COUNT": 2000,  # 默认注册次数
     "DEFAULT_THREADS": 10,  # 默认线程数
+    "USE_CAPTCHA": True,  # 是否使用验证码识别 (True: 使用, False: 不使用)
 }
 # ================================================
 
@@ -101,6 +106,41 @@ def generate_random_ip():
         ):
             return ip_addr
 
+def recognize_captcha(session, base_url, headers=None, ignore_ssl=False, max_retries=3):
+    """
+    Download and recognize the captcha image
+    Returns the recognized text
+    """
+    for attempt in range(max_retries):
+        try:
+            # Get the captcha image - 更新为正确的验证码URL
+            captcha_url = f"{base_url}/captcha.php"
+            # 使用传入的headers或默认headers
+            captcha_headers = headers if headers else {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+            }
+            response = session.get(captcha_url, headers=captcha_headers, timeout=10, verify=not ignore_ssl)
+            if response.status_code != 200:
+                print(f"[错误] 获取验证码失败: {response.status_code}")
+                continue
+                
+            # Use ddddocr to recognize the captcha
+            image_bytes = response.content
+            result = ocr.classification(image_bytes)
+            if result and len(result) >= 3:  # 降低字符长度要求，可能不是4个字符
+                print(f"[验证码] 识别结果: {result}")
+                return result
+            else:
+                print(f"[警告] 验证码识别结果异常: {result}，尝试重新识别")
+                continue
+        except Exception as e:
+            print(f"[错误] 验证码识别异常 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt == max_retries - 1:  # 最后一次尝试
+                print("[错误] 验证码识别失败，已达到最大重试次数")
+                return None
+            time.sleep(1)  # 等待1秒后重试
+    return None
+
 # 随机生成的50个 User-Agent 字符串列表
 user_agents = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36",
@@ -159,7 +199,7 @@ user_agents = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.116 Safari/537.36"
 ]
 
-def register_account(base_url, ignore_ssl=False):
+def register_account(base_url, ignore_ssl=False, use_captcha=True):
     # 随机选择邮箱后缀列表
     email_suffixes = [
     "hotmail.com", "gmail.com", "qq.com", "163.com", "126.com", "139.com", "aliyun.com", "mail.com",
@@ -191,10 +231,10 @@ def register_account(base_url, ignore_ssl=False):
         "accept-language": "en,zh-CN;q=0.9,zh;q=0.8",
         "cache-control": "no-cache",
         "content-type": "application/x-www-form-urlencoded",
-        "origin": "https://cx.flyhs.top",
+        "origin": "https://photos.fanstudio.tech",
         "pragma": "no-cache",
         "priority": "u=0, i",
-        "referer": "https://cx.flyhs.top/register.php",
+        "referer": "https://photos.fanstudio.tech/register.php",
         "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
@@ -216,14 +256,21 @@ def register_account(base_url, ignore_ssl=False):
         # 先访问注册页面获取PHPSESSID
         session.get(f"{base_url}/register.php", headers=headers, verify=not ignore_ssl)
         
-        # 构建表单数据
+        # 构建表单数据 - 根据实际表单字段
         payload = {
             "username": username,
-            "email": email,
-            "password": password,
-            "confirm_password": password,
-            "terms": "on"
+            "password": password
         }
+        
+        # 如果启用验证码识别
+        if use_captcha:
+            # 获取并识别验证码
+            captcha_text = recognize_captcha(session, base_url, headers=headers, ignore_ssl=ignore_ssl)
+            if not captcha_text:
+                print(f"\r[失败] 验证码识别失败！账号: {username}")
+                return False
+            # 添加验证码到表单数据
+            payload["captcha"] = captcha_text
         
         # 发送注册请求
         response = session.post(
@@ -259,10 +306,10 @@ def register_account(base_url, ignore_ssl=False):
             
             # 优先检查是否有明确的成功指示
             if has_success:
-                print(f"\r[成功] 账号: {username} | 邮箱: {email} | 密码: {password}")
+                print(f"\r[成功] 账号: {username} | 密码: {password}")
                 # 保存成功的账号
                 with open("successful_accounts.txt", "a", encoding="utf-8") as f:
-                    f.write(f"账号: {username}, 邮箱: {email}, 密码: {password}\n")
+                    f.write(f"账号: {username}, 密码: {password}\n")
                 return True
             # 如果有明确错误指示，则失败
             elif has_error:
@@ -276,17 +323,17 @@ def register_account(base_url, ignore_ssl=False):
                     return False
                 # 如果响应正常长度且没有错误指示，可能成功
                 else:
-                    print(f"\r[可能成功] 账号: {username} | 邮箱: {email} | 密码: {password}")
+                    print(f"\r[可能成功] 账号: {username} | 密码: {password}")
                     # 保存可能成功的账号
                     with open("successful_accounts.txt", "a", encoding="utf-8") as f:
-                        f.write(f"账号: {username}, 邮箱: {email}, 密码: {password}\n")
+                        f.write(f"账号: {username}, 密码: {password}\n")
                     return True
         elif response.status_code == 302:
             # 重定向通常表示成功
-            print(f"\r[成功] 账号: {username} | 邮箱: {email} | 密码: {password} | 重定向")
+            print(f"\r[成功] 账号: {username} | 密码: {password} | 重定向")
             # 保存成功的账号
             with open("successful_accounts.txt", "a", encoding="utf-8") as f:
-                f.write(f"账号: {username}, 邮箱: {email}, 密码: {password}\n")
+                f.write(f"账号: {username}, 密码: {password}\n")
             return True
         else:
             print(f"\r[失败] 账号: {username} | 状态码: {response.status_code}")
@@ -340,6 +387,7 @@ def main():
     
     # 确定是否忽略SSL错误（命令行参数优先于配置文件）
     ignore_ssl = args.ignore_ssl or CONFIG["IGNORE_SSL"]
+    use_captcha = CONFIG["USE_CAPTCHA"]
     
     # 如果启用了忽略SSL选项，显示警告并禁用SSL警告
     if ignore_ssl:
@@ -351,6 +399,7 @@ def main():
     print(f"当前配置:")
     print(f"  目标网站: {base_url}")
     print(f"  忽略SSL: {'是' if ignore_ssl else '否'}")
+    print(f"  验证码识别: {'是' if use_captcha else '否'}")
     print(f"  注册频率: {args.frequency}秒")
     print(f"  线程数量: {args.threads}")
     print(f"  注册次数: {args.count}")
@@ -371,7 +420,7 @@ def main():
                     break
             
             try:
-                result = register_account(base_url, ignore_ssl)
+                result = register_account(base_url, ignore_ssl, use_captcha)
                 with counter_lock:
                     if result:
                         successful_count += 1
